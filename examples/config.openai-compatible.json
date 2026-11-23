@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "director": {
+    "model": "replace-with-your-director-model-id",
+    "api": "openai-completions",
+    "baseUrl": "https://your-gateway.example/v1",
+    "apiKeyEnv": "GC_BRIDGE_DIRECTOR_API_KEY",
+    "reasoning": "off",
+    "contextWindow": 1000000,
+    "maxOutputTokens": 4096
+  },
+  "discussion": {
+    "role": "讨论伙伴",
+    "taskInstructions": ""
+  }
+}

@@ -1,0 +1,7 @@
+# Use absolute paths belonging to the same OS as the Codex process.
+[mcp_servers.gc_bridge]
+command = "bun"
+args = ["/absolute/path/GC_Bridge/src/cli.ts", "mcp", "--config", "/absolute/private/path/gc-bridge.json"]
+env_vars = ["GC_BRIDGE_DIRECTOR_API_KEY"]
+startup_timeout_sec = 30
+tool_timeout_sec = 2500

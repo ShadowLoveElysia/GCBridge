@@ -1,0 +1,68 @@
+name: build-desktop-binaries
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: bun-windows-x64-baseline
+            artifact: GCBridge-windows-x64
+          - os: macos-15
+            target: bun-darwin-arm64
+            artifact: GCBridge-macos-arm64
+          - os: macos-15-intel
+            target: bun-darwin-x64
+            artifact: GCBridge-macos-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64-baseline
+            artifact: GCBridge-linux-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      NODE_PATH: ${{ runner.temp }}/gcbridge-deps/node_modules
+      npm_config_cache: ${{ runner.temp }}/gcbridge-cache/npm
+      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/gcbridge-cache/bun
+      GC_BRIDGE_BUILD_DIR: ${{ runner.temp }}/gcbridge-output
+      TMPDIR: ${{ runner.temp }}/gcbridge-tmp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.5'
+      - name: Prepare external directories
+        run: node -e "const fs=require('node:fs'),p=require('node:path');const d=p.join(process.env.RUNNER_TEMP,'gcbridge-deps');fs.mkdirSync(d,{recursive:true});fs.mkdirSync(process.env.TMPDIR,{recursive:true});for(const f of ['package.json','package-lock.json'])fs.copyFileSync(f,p.join(d,f));"
+      - name: Install pinned build dependencies
+        shell: bash
+        run: npm --prefix "$RUNNER_TEMP/gcbridge-deps" ci --ignore-scripts --no-audit --no-fund
+      - name: TypeScript
+        run: bun run check
+      - name: Source lint
+        run: bun run lint
+      - name: Credential and repository artifact scan
+        run: bun src/release-check.ts
+      - name: Compile standalone application
+        run: bun scripts/build.ts ${{ matrix.target }}
+      - name: Package native application
+        run: bun scripts/package.ts
+      - name: Remove build intermediates from distributable
+        shell: bash
+        run: rm -rf "$GC_BRIDGE_BUILD_DIR/embedded"
+      - name: Upload compiled application and notices
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/gcbridge-output/
+          if-no-files-found: error

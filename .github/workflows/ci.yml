@@ -1,0 +1,42 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  static-checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      NODE_PATH: ${{ runner.temp }}/gcbridge-deps/node_modules
+      npm_config_cache: ${{ runner.temp }}/gcbridge-cache/npm
+      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/gcbridge-cache/bun
+      TMPDIR: ${{ runner.temp }}/gcbridge-tmp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.5'
+      - name: Prepare external dependency and temporary directories
+        run: node -e "const fs=require('node:fs'),p=require('node:path');const d=p.join(process.env.RUNNER_TEMP,'gcbridge-deps');fs.mkdirSync(d,{recursive:true});fs.mkdirSync(process.env.TMPDIR,{recursive:true});for(const f of ['package.json','package-lock.json'])fs.copyFileSync(f,p.join(d,f));"
+      - name: Install pinned dependencies outside checkout
+        shell: bash
+        run: npm --prefix "$RUNNER_TEMP/gcbridge-deps" ci --ignore-scripts --no-audit --no-fund
+      - name: TypeScript
+        run: bun run check
+      - name: Source lint
+        run: bun run lint
+      - name: Browser JavaScript syntax
+        run: |
+          node --check ui/app.js
+          node --check ui/workspace.js
+      - name: Credential and repository artifact scan
+        run: bun src/release-check.ts

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "director": {
+    "model": "gemini-2.5-pro",
+    "api": "google-generative-ai",
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+    "apiKeyEnv": "GC_BRIDGE_DIRECTOR_API_KEY",
+    "reasoning": "high",
+    "contextWindow": 1000000,
+    "maxOutputTokens": 4096
+  },
+  "limits": {
+    "timeoutMs": 120000,
+    "maxTurns": 12,
+    "maxInputChars": 1000000,
+    "maxSessionTokens": 100000,
+    "maxConcurrent": 2
+  },
+  "discussion": {
+    "role": "讨论伙伴",
+    "taskInstructions": ""
+  }
+}
