@@ -1,27 +1,27 @@
 import { execFileSync } from "node:child_process";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { createDependencyWorkspace, dependencyDirectory } from "./dependency-workspace.ts";
 
 const root = resolve(import.meta.dir, "..");
-const dependencies =
-  process.env.NODE_PATH?.split(delimiter).find(Boolean) ??
-  dirname(dirname(Bun.resolveSync("typescript/package.json", root)));
+const dependencies = dependencyDirectory(root);
 const action = process.argv[2] ?? "types";
-if (action === "types")
-  execFileSync(
-    process.execPath,
-    [
-      join(dependencies, "typescript/bin/tsc"),
-      "--noEmit",
-      "--project",
-      join(root, "tsconfig.json"),
-      "--baseUrl",
-      dependencies,
-      "--typeRoots",
-      join(dependencies, "@types"),
-    ],
-    { cwd: root, stdio: "inherit" },
-  );
-else if (action === "lint" || action === "format")
+if (action === "types") {
+  const workspace = await createDependencyWorkspace(root, dependencies);
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        join(dependencies, "typescript/bin/tsc"),
+        "--noEmit",
+        "--project",
+        join(workspace.root, "tsconfig.json"),
+      ],
+      { cwd: workspace.root, stdio: "inherit" },
+    );
+  } finally {
+    await workspace.dispose();
+  }
+} else if (action === "lint" || action === "format")
   execFileSync(
     process.execPath,
     [

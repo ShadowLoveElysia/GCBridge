@@ -58,7 +58,7 @@ bash launch.sh check
 bash launch.sh lint
 ```
 
-`package-lock.json` pins dependencies. The launcher installs them under the external user cache (`~/.cache/gc-bridge/dependencies/<lock-hash>/node_modules` in WSL). npm/Bun caches and temporary output also live outside the checkout. There is no compilation output in the repository.
+`package-lock.json` pins dependencies. The launcher installs them under the external user cache (`~/.cache/gc-bridge/dependencies/<lock-hash>/node_modules` in WSL). npm/Bun caches and temporary output also live outside the checkout. There is no compilation output in the repository. Type checking and compilation use an allowlisted temporary source copy next to external `node_modules`, allowing TypeScript/Bun to resolve package `exports` normally. The copy is removed after each operation; neither `NODE_PATH` nor `--baseUrl` is treated as a replacement for package-export resolution. The build workflow installs the target-specific Bun runtime once and reuses it for standalone compilation.
 
 ## Configure
 

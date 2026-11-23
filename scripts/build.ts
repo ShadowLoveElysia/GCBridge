@@ -1,17 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import {
+  createDependencyWorkspace,
+  dependencyDirectory,
+  externalBuildDirectory,
+} from "./dependency-workspace.ts";
 
 const root = resolve(import.meta.dir, ".."),
   target = process.argv[2] ?? `bun-${process.platform}-${process.arch}`;
-const output = resolve(
-  process.env.GC_BRIDGE_BUILD_DIR ??
-    join(process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? "/tmp", "gcbridge-build"),
-);
-const dependencies =
-  process.env.NODE_PATH?.split(delimiter).find(Boolean) ??
-  dirname(dirname(Bun.resolveSync("@oh-my-pi/pi-ai/package.json", root)));
+const output = externalBuildDirectory(root);
+const dependencies = dependencyDirectory(root);
 const nativeTag = target
   .replace(/^bun-/, "")
   .replace(/-baseline$/, "")
@@ -61,50 +61,58 @@ const assets = Object.fromEntries(
   await Promise.all(names.map(async (name) => [name, await readFile(join(root, name), "utf8")])),
 );
 const file = join(output, target.includes("windows") ? "GCBridge.exe" : "GCBridge");
-const result = await Bun.build({
-  entrypoints: [join(root, "src/entry.ts")],
-  target: "bun",
-  minify: true,
-  env: "disable",
-  compile: {
-    target: target as Bun.Build.CompileTarget,
-    ...(process.env.GC_BRIDGE_COMPILE_RUNTIME
-      ? { executablePath: process.env.GC_BRIDGE_COMPILE_RUNTIME }
-      : {}),
-    outfile: file,
-    autoloadDotenv: false,
-    autoloadBunfig: false,
-    ...(target.includes("windows")
-      ? {
-          windows: {
-            hideConsole: true,
-            title: "GCBridge",
-            version: `${appVersion}.0`,
-            description: "Local model discussion workspace",
-          },
-        }
-      : {}),
-  },
-  plugins: [
-    {
-      name: "gcbridge-embedded-assets",
-      setup(build) {
-        build.onLoad({ filter: /[/\\]assets\.ts$/ }, () => ({
-          loader: "js",
-          contents: `const assets=${JSON.stringify(assets)};export const assetNames=Object.keys(assets);export async function assetText(name){if(!(name in assets))throw Error("Unknown asset");return assets[name];}`,
-        }));
-        build.onLoad({ filter: /[/\\]pi-natives[/\\]native[/\\]embedded-addon\.js$/ }, () => ({
-          loader: "js",
-          contents:
-            manifest
-              .map((f, i) => `import frame${i} from ${JSON.stringify(f.path)} with {type:"file"};`)
-              .join("\n") +
-            `\nexport const embeddedAddon={platformTag:${JSON.stringify(nativeTag)},version:"19.1.1",files:[${manifest.map((f, i) => `{filename:${JSON.stringify(f.filename)},variant:${JSON.stringify(f.variant)},size:${f.size},hash:${JSON.stringify(f.hash)},zstdPath:frame${i}}`).join(",")}]};`,
-        }));
-      },
+const workspace = await createDependencyWorkspace(root, dependencies);
+let result: Awaited<ReturnType<typeof Bun.build>>;
+try {
+  result = await Bun.build({
+    entrypoints: [join(workspace.root, "src/entry.ts")],
+    target: "bun",
+    minify: true,
+    env: "disable",
+    compile: {
+      target: target as Bun.Build.CompileTarget,
+      ...(process.env.GC_BRIDGE_COMPILE_RUNTIME
+        ? { executablePath: process.env.GC_BRIDGE_COMPILE_RUNTIME }
+        : {}),
+      outfile: file,
+      autoloadDotenv: false,
+      autoloadBunfig: false,
+      ...(target.includes("windows")
+        ? {
+            windows: {
+              hideConsole: true,
+              title: "GCBridge",
+              version: `${appVersion}.0`,
+              description: "Local model discussion workspace",
+            },
+          }
+        : {}),
     },
-  ],
-});
+    plugins: [
+      {
+        name: "gcbridge-embedded-assets",
+        setup(build) {
+          build.onLoad({ filter: /[/\\]assets\.ts$/ }, () => ({
+            loader: "js",
+            contents: `const assets=${JSON.stringify(assets)};export const assetNames=Object.keys(assets);export async function assetText(name){if(!(name in assets))throw Error("Unknown asset");return assets[name];}`,
+          }));
+          build.onLoad({ filter: /[/\\]pi-natives[/\\]native[/\\]embedded-addon\.js$/ }, () => ({
+            loader: "js",
+            contents:
+              manifest
+                .map(
+                  (f, i) => `import frame${i} from ${JSON.stringify(f.path)} with {type:"file"};`,
+                )
+                .join("\n") +
+              `\nexport const embeddedAddon={platformTag:${JSON.stringify(nativeTag)},version:"19.1.1",files:[${manifest.map((f, i) => `{filename:${JSON.stringify(f.filename)},variant:${JSON.stringify(f.variant)},size:${f.size},hash:${JSON.stringify(f.hash)},zstdPath:frame${i}}`).join(",")}]};`,
+          }));
+        },
+      },
+    ],
+  });
+} finally {
+  await workspace.dispose();
+}
 if (!result.success) {
   for (const log of result.logs) console.error(log);
   throw new Error("Standalone build failed");

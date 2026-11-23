@@ -19,15 +19,19 @@ jobs:
         include:
           - os: windows-latest
             target: bun-windows-x64-baseline
+            bun_distribution: bun-windows-x64-baseline
             artifact: GCBridge-windows-x64
           - os: macos-15
             target: bun-darwin-arm64
+            bun_distribution: bun-darwin-aarch64
             artifact: GCBridge-macos-arm64
           - os: macos-15-intel
             target: bun-darwin-x64
+            bun_distribution: bun-darwin-x64
             artifact: GCBridge-macos-x64
           - os: ubuntu-latest
             target: bun-linux-x64-baseline
+            bun_distribution: bun-linux-x64-baseline
             artifact: GCBridge-linux-x64
     runs-on: ${{ matrix.os }}
     steps:
@@ -39,8 +43,10 @@ jobs:
         id: paths
         run: node scripts/prepare-ci.mjs
       - uses: oven-sh/setup-bun@v2
+        id: bun
         with:
           bun-version: '1.4.5'
+          bun-download-url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/${{ matrix.bun_distribution }}.zip
       - name: Install pinned build dependencies
         shell: bash
         run: npm --prefix "$GC_BRIDGE_DEPS_DIR" ci --ignore-scripts --no-audit --no-fund
@@ -55,6 +61,8 @@ jobs:
       - name: Credential and repository artifact scan
         run: bun src/release-check.ts
       - name: Compile standalone application
+        env:
+          GC_BRIDGE_COMPILE_RUNTIME: ${{ steps.bun.outputs.bun-path }}
         run: bun scripts/build.ts ${{ matrix.target }}
       - name: Package native application
         run: bun scripts/package.ts
