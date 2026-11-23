@@ -11,6 +11,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    name: Build ${{ matrix.artifact }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -28,29 +30,28 @@ jobs:
             target: bun-linux-x64-baseline
             artifact: GCBridge-linux-x64
     runs-on: ${{ matrix.os }}
-    env:
-      NODE_PATH: ${{ runner.temp }}/gcbridge-deps/node_modules
-      npm_config_cache: ${{ runner.temp }}/gcbridge-cache/npm
-      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/gcbridge-cache/bun
-      GC_BRIDGE_BUILD_DIR: ${{ runner.temp }}/gcbridge-output
-      TMPDIR: ${{ runner.temp }}/gcbridge-tmp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Prepare external directories
+        id: paths
+        run: node scripts/prepare-ci.mjs
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.5'
-      - name: Prepare external directories
-        run: node -e "const fs=require('node:fs'),p=require('node:path');const d=p.join(process.env.RUNNER_TEMP,'gcbridge-deps');fs.mkdirSync(d,{recursive:true});fs.mkdirSync(process.env.TMPDIR,{recursive:true});for(const f of ['package.json','package-lock.json'])fs.copyFileSync(f,p.join(d,f));"
       - name: Install pinned build dependencies
         shell: bash
-        run: npm --prefix "$RUNNER_TEMP/gcbridge-deps" ci --ignore-scripts --no-audit --no-fund
+        run: npm --prefix "$GC_BRIDGE_DEPS_DIR" ci --ignore-scripts --no-audit --no-fund
       - name: TypeScript
         run: bun run check
       - name: Source lint
         run: bun run lint
+      - name: Browser JavaScript syntax
+        run: |
+          node --check ui/app.js
+          node --check ui/workspace.js
       - name: Credential and repository artifact scan
         run: bun src/release-check.ts
       - name: Compile standalone application
@@ -58,11 +59,12 @@ jobs:
       - name: Package native application
         run: bun scripts/package.ts
       - name: Remove build intermediates from distributable
-        shell: bash
-        run: rm -rf "$GC_BRIDGE_BUILD_DIR/embedded"
+        run: node -e "require('node:fs').rmSync(require('node:path').join(process.env.GC_BRIDGE_BUILD_DIR,'embedded'),{recursive:true,force:true})"
       - name: Upload compiled application and notices
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ runner.temp }}/gcbridge-output/
+          path: ${{ steps.paths.outputs.artifact_dir }}/
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
